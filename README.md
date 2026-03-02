@@ -1,134 +1,119 @@
-# Keyword Transformer: A Self-Attention Model for Keyword Spotting
+# Keyword Transformer (KWT) - TAU Final Project
 
-<img src="kwt.png" alt="drawing" width="200"/>
+**Course:** Advanced Topics in Audio Processing using Deep Learning  
+**Instructor:** Tal Rosenwein  
+**Team Members:** Shir Rashkovits, Shoham Mazuz, Gal Getz, Omer Ventura
 
-This is the official repository for the paper [Keyword Transformer: A Self-Attention Model for Keyword Spotting](https://arxiv.org/abs/2104.00769), presented at Interspeech 2021. Consider citing our paper if you find this work useful.
+---
+
+## 📝 Overview
+This repository contains our implementation and reproduction of the **Keyword Transformer (KWT)**, based on the research by Axel Berg et al. 
+
+Our project specifically focuses on the **KWT-1** architecture (the lightweight variant) for the **12-label keyword spotting task** using the Google Speech Commands V2 dataset. We explore the efficiency of the reproducibility and the efficacy of the model by comparing two training strategies:
+1. **Baseline:** Training KWT-1 from scratch.
+2. **Distillation:** Leveraging a pre-trained **Att-MH-RNN** teacher (CNN-RNN architecture) to guide the student Transformer.
+
+Our analysis focuses on the comparison between model trained from scratch and the one trained with distillation.
+
+<p align="center">
+  <img src="assets/kwt_pipeline.png" width="700">
+  <br>
+  <em>Figure 1: KWT Architecture - From Mel-Spectrogram patches to Transformer Encoder outputs.</em>
+</p>
+
+
+
+---
+
+## 📂 Repository Structure
+
+```text
+.
+├── audio_samples/           # Dataset samples (V2-12), background noise, and train, validation examples.
+├── models_data_v2_12/       # Training artifacts: Checkpoints (.ckpt), TensorBoard logs, and flags.
+├── scripts/                 # Slurm/Bash scripts for remote training (.sh) and evaluation.
+├── kws_streaming/           # Core logic: Model definitions (KWT), data loaders, and training loops.
+├── assets/                  # Project visualizations, architecture diagrams, and result plots.
+├── requirements.txt         # Python dependencies.
+└── README.md                # Project documentation.
+```
+
+---
+
+
+## 🛠 Setup & Requirements
+This project is built and tested using **Python 3.10** on **macOS (Apple Silicon)**.
+
+1. **Environment Setup:**
+```bash
+python3.10 -m venv venv3
+source venv3/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
 
 ```
-@inproceedings{berg21_interspeech,
-  author={Axel Berg and Mark O’Connor and Miguel Tairum Cruz},
-  title={{Keyword Transformer: A Self-Attention Model for Keyword Spotting}},
-  year=2021,
-  booktitle={Proc. Interspeech 2021},
-  pages={4249--4253},
-  doi={10.21437/Interspeech.2021-1286}
-}
-```
 
-## Setup
+2. **Data Preparation:**
+To download and extract the Google Speech Commands V2 dataset:
 
-### Download Google Speech Commands
-
-There are two versions of the dataset, V1 and V2. To download and extract dataset V2, run:
-
-```shell
-wget https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_v0.02.tar.gz
+```bash
+wget [https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_v0.02.tar.gz](https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_v0.02.tar.gz)
 mkdir data2
 mv ./speech_commands_v0.02.tar.gz ./data2
 cd ./data2
 tar -xf ./speech_commands_v0.02.tar.gz
 cd ../
+
 ```
 
-And similarly for V1:
+---
 
-```shell
-wget http://download.tensorflow.org/data/speech_commands_v0.01.tar.gz
-mkdir data1
-mv ./speech_commands_v0.01.tar.gz ./data1
-cd ./data1
-tar -xf ./speech_commands_v0.01.tar.gz
-cd ../
+## 🚀 How to Run
+
+### 1. Evaluation (Performance & Latency)
+
+To evaluate the accuracy and measure the inference latency (Batch Size = 1), run:
+
+```bash
+# To evaluate the Baseline model:
+sh scripts/evaluate.sh kwt1_baseline
+
+# To evaluate the Distilled model:
+sh scripts/evaluate.sh kwt1_distill
+
 ```
 
-### Install dependencies
+### 2. Training
 
-Set up a new virtual environment:
+* **From Scratch:** `sh scripts/train_baseline.sh`
+* **With Distillation:** `sh scripts/train_distill.sh` (Requires teacher weights in `models_data_v2_12_labels/`)
 
-```shell
-pip install virtualenv
-virtualenv --system-site-packages -p python3 ./venv3
-source ./venv3/bin/activate
+---
+
+## 📊 Results & Visualization
+
+### **TensorBoard Logs**
+To visualize training progress, loss curves, and accuracy from the initial 24-hour run, execute the following command from the project root:
+
+```bash
+tensorboard --logdir ./models_data_v2_12_labels/first_run_on_server/
 ```
 
-To install dependencies, run
+> **Note:** This directory contains synchronous logs for both the **Baseline** and **Distillation** experiments, allowing for side-by-side comparison in the TensorBoard dashboard.
 
-```shell
-pip install -r requirements.txt
-```
+### **Checkpoints & Models**
 
-Tested using Tensorflow 2.4.0rc1 with CUDA 11.
+The trained weights (checkpoints) and configuration flags for these experiments are organized as follows:
 
-**Note**: Installing the correct Tensorflow version is important for reproducibility! Using more recent versions of Tensorflow results in small accuracy differences each time the model is evaluated. This might be due to a change in how the random seed generator is implemented, and therefore changes the sampling of the "unknown"  keyword class.
+| Experiment | Directory Path |
+| --- | --- |
+| **Baseline (KWT1)** | `models_data_v2_12_labels/first_run_on_server/kwt1_baseline/` |
+| **Distillation (KWT1)** | `models_data_v2_12_labels/first_run_on_server/kwt1_distill/` |
 
-## Model
-The Keyword-Transformer model is defined [here](kws_streaming/models/kws_transformer.py). It takes the mel scale spectrogram as input, which has shape 98 x 40 using the default settings, corresponding to the 98 time windows with 40 frequency coefficients.
+---
 
-There are three variants of the Keyword-Transformer model:
+## ⚠️ Challenges & Modifications
 
-* **Time-domain attention**: each time-window is treated as a patch, self-attention is computed between time-windows
-* **Frequency-domain attention**: each frequency is treated as a patch self-attention is computed between frequencies
-* **Combination of both**: The signal is fed into both a time- and a frequency-domain transformer and the outputs are combined
-* **Patch-wise attention**: Similar to the vision transformer, it extracts rectangular patches from the spectrogram, so attention happens both in the time and frequency domain simultaneously.
-
-## Training a model from scratch
-To train KWT-3 from scratch on Speech Commands V2, run  
-
-```shell
-sh train.sh
-```
-
-Please note that the train directory (given by the argument  `--train_dir`) cannot exist prior to start script.
-
-The model-specific arguments for KWT are:
-
-```shell
---num_layers 12 \ #number of sequential transformer encoders
---heads 3 \ #number of attentions heads
---d_model 192 \ #embedding dimension
---mlp_dim 768 \ #mlp-dimension
---dropout1 0. \ #dropout in mlp/multi-head attention blocks
---attention_type 'time' \ #attention type: 'time', 'freq', 'both' or 'patch'
---patch_size '1,40' \ #spectrogram patch_size, if patch attention is used
---prenorm False \ # if False, use postnorm
-```
-
-## Training with distillation
-
-We employ hard distillation from a convolutional model (Att-MH-RNN), similar to the approach in [DeIT](https://github.com/facebookresearch/deit).
-
-To train KWT-3 with hard distillation from a pre-trained model, run
-
-```shell
-sh distill.sh
-```
-
-## Run inference using a pre-trained model
-
-Pre-trained weights for KWT-3, KWT-2 and KWT-1 are provided in ./models_data_v2_12_labels.
-
-|Model name|embedding dim|mlp-dim|heads|depth|#params|V2-12 accuracy|pre-trained|
-|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-|KWT-1|64|128|1|12|607K|97.7|[here](models_data_v2_12_labels/kwt1)|
-|KWT-2|128|256|2|12|2.4M|98.2|[here](models_data_v2_12_labels/kwt2)|
-|KWT-3|192|768|3|12|5.5M|98.7|[here](models_data_v2_12_labels/kwt3)|
-
-To perform inference on Google Speech Commands v2 with 12 labels, run
-
-```shell
-sh eval.sh
-```
-
-## Acknowledgements
-
-The code heavily borrows from the [KWS streaming work](https://github.com/google-research/google-research/tree/master/kws_streaming) by Google Research. For a more detailed description of the code structure, see the original authors' [README](kws_streaming/README.md).
-
-We also exploit training techniques from [DeiT](https://github.com/facebookresearch/deit).
-
-We thank the authors for sharing their code. Please consider citing them as well if you use our code.
-
-## License
-
-The source files in this repository are released under the [Apache 2.0](LICENSE.txt) license.
-
-Some source files are derived from the [KWS streaming repository](https://github.com/google-research/google-research/tree/master/kws_streaming) by Google Research. These are also released under the Apache 2.0 license, the text of which can be seen in the LICENSE file on their repository.
+* **Hardware Adaptation:** Optimized for **Apple Silicon** by adjusting batch sizes and memory usage.
+* **Architecture Scaling:** Explicitly modified the pipeline to target the **KWT-1** variant ($d_{model}=64$, $h=1$).
+* **Data Generator:** Patched the `unknown` class sampling logic to ensure compatibility with modern TensorFlow versions.
