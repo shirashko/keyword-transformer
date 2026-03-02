@@ -125,11 +125,12 @@ def train(flags):
   loss_weights = [ 0.5, 0.5, 0.0 ] if teacher else [ 1. ] # equally weight losses form label and teacher, ignore ensemble output
   model.compile(optimizer=optimizer, loss=loss, loss_weights=loss_weights, metrics=metrics)
 
+  saver = tf.train.Saver(max_to_keep=5)
   train_writer = tf.summary.FileWriter(flags.summaries_dir + '/train',
                                        sess.graph)
   validation_writer = tf.summary.FileWriter(flags.summaries_dir + '/validation')
 
-  sess.run(tf.global_variables_initializer())
+  sess.run(tf.compat.v1.global_variables_initializer())
 
   if flags.start_checkpoint:
     model.load_weights(flags.start_checkpoint).expect_partial()
@@ -227,7 +228,7 @@ def train(flags):
       train_writer.add_summary(summary, training_step)
 
     is_last_step = (training_step == training_steps_max)
-    if (training_step % flags.eval_step_interval) == 0 or is_last_step:
+    if ((training_step % flags.eval_step_interval) == 0 and training_step > 0) or is_last_step:
       set_size = audio_processor.set_size('validation')
       set_size = int(set_size / flags.batch_size) * flags.batch_size
       total_accuracy = 0.0
@@ -273,7 +274,9 @@ def train(flags):
       if total_accuracy >= best_accuracy:
         best_accuracy = total_accuracy
         # overwrite the best model weights
-        model.save_weights(flags.train_dir + 'best_weights')
+        checkpoint_path = os.path.join(flags.train_dir, 'best_weights.ckpt')
+        saver.save(sess, checkpoint_path)
+        logging.info('Saved best checkpoint to %s', checkpoint_path)
       logging.info('So far the best validation accuracy is %.2f%%',
                    (best_accuracy * 100))
 
@@ -301,4 +304,6 @@ def train(flags):
                *(total_accuracy * 100, set_size))
   with open(os.path.join(flags.train_dir, 'accuracy_last.txt'), 'wt') as fd:
     fd.write(str(total_accuracy * 100))
-  model.save_weights(flags.train_dir + 'last_weights')
+  last_checkpoint_path = os.path.join(flags.train_dir, 'last_weights.ckpt')
+  saver.save(sess, last_checkpoint_path)
+  logging.info('Saved last checkpoint to %s', last_checkpoint_path)
