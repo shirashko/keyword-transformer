@@ -215,6 +215,7 @@ def train(flags):
             tf.Summary.Value(tag='accuracy', simple_value=acc_label),
             tf.Summary.Value(tag='teacher_accuracy', simple_value=acc_teacher),
             tf.Summary.Value(tag='ensemble_accuracy', simple_value=acc_ensemble),
+            tf.Summary.Value(tag='loss', simple_value=loss_total),
         ])
       else:
         loss_label, acc_label = result
@@ -223,6 +224,7 @@ def train(flags):
             *(training_step, learning_rate_value, acc_label * 100, loss_label))
         summary = tf.Summary(value=[
             tf.Summary.Value(tag='accuracy', simple_value=acc_label),
+            tf.Summary.Value(tag='loss', simple_value=loss_label),
         ])
 
       train_writer.add_summary(summary, training_step)
@@ -253,12 +255,15 @@ def train(flags):
           tf.Summary.Value(tag='accuracy', simple_value=acc_ensemble),
           tf.Summary.Value(tag='label_head_accuracy', simple_value=acc_label),
           tf.Summary.Value(tag='distill_head_accuracy', simple_value=acc_teacher),
+          tf.Summary.Value(tag='loss', simple_value=loss_total),
           ])
           accuracy = acc_ensemble
         else:
           loss_label, acc_label = result
           summary = tf.Summary(value=[
-              tf.Summary.Value(tag='accuracy', simple_value=acc_label),])
+            tf.Summary.Value(tag='accuracy', simple_value=acc_label),
+            tf.Summary.Value(tag='loss', simple_value=loss_label),
+          ])
           accuracy = acc_label
 
         validation_writer.add_summary(summary, training_step)
