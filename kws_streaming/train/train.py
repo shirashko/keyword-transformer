@@ -37,8 +37,6 @@ from kws_streaming.models import utils
 
 import math
 
-from transformers import AdamWeightDecay
-
 
 def train(flags):
   """Model training."""
@@ -116,9 +114,7 @@ def train(flags):
         weight_decay=flags.novograd_weight_decay,
         grad_averaging=bool(flags.novograd_grad_averaging))
   elif flags.optimizer == 'adamw':
-    # Exclude some layers for weight decay
-    exclude = ["pos_emb", "class_emb", "layer_normalization", "bias"]
-    optimizer = AdamWeightDecay(learning_rate=0.05, weight_decay_rate=flags.l2_weight_decay, exclude_from_weight_decay=exclude)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=float(flags.learning_rate))
   else:
     raise ValueError('Unsupported optimizer:%s' % flags.optimizer)
 
@@ -133,7 +129,7 @@ def train(flags):
   sess.run(tf.compat.v1.global_variables_initializer())
 
   if flags.start_checkpoint:
-    model.load_weights(flags.start_checkpoint).expect_partial()
+    saver.restore(sess, flags.start_checkpoint)
     logging.info('Weights loaded from %s', flags.start_checkpoint)
 
   if teacher_flags and teacher_flags.start_checkpoint:
@@ -141,7 +137,7 @@ def train(flags):
     teacher_base.load_weights(teacher_flags.start_checkpoint).assert_existing_objects_matched()
     logging.info('Distillation teacher weights loaded from %s', teacher_flags.start_checkpoint)
 
-  start_step = 0
+  start_step = flags.start_step
 
   logging.info('Training from step: %d ', start_step)
 
