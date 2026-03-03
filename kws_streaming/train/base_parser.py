@@ -179,6 +179,12 @@ def base_parser():
       type=str,
       default='',
       help='If specified, restore this pretrained model before any training.')
+  parser.add_argument(
+      '--start_step',
+      type=int,
+      default=0,
+      help='Step number to start training from.',
+  )
 
   # Function used to parse --verbosity argument
   def verbosity_arg(value):

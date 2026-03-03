@@ -27,6 +27,7 @@ class Params(object):
 
   def __init__(self):
     # default parameters
+    self.start_step = 0
     self.data_url = ''
     self.train_dir = ''
     self.wanted_words = 'yes,no,up,down,left,right,on,off,stop,go'
