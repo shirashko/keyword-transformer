@@ -12,5 +12,5 @@
     "dropout1": 0.2,
     "units2": "64",
     "act2": "'relu'",
-    "start_checkpoint": "../models_data_v2_12_labels/att_mh_rnn_1/best_weights"
+    "start_checkpoint": "models_data_v2_12_labels/att_mh_rnn_1/best_weights"
 }
