@@ -31,7 +31,7 @@ Our analysis focuses on the comparison between model trained from scratch and th
 .
 ├── audio_samples/           # Dataset samples (V2-12), background noise, and train, validation examples.
 ├── models_data_v2_12/       # Training artifacts: Checkpoints (.ckpt), TensorBoard logs, and flags.
-├── scripts/                 # Slurm/Bash scripts for remote training (.sh) and evaluation.
+├── scripts/                 # Slurm/Bash scripts for remote training and evaluation.
 ├── kws_streaming/           # Core logic: Model definitions (KWT), data loaders, and training loops.
 ├── assets/                  # Project visualizations, architecture diagrams, and result plots.
 ├── requirements.txt         # Python dependencies.
@@ -84,9 +84,9 @@ sh scripts/evaluate.sh kwt1_distill
 ```
 
 ### 2. Training
-
-* **From Scratch:** `sh scripts/train_baseline.sh`
-* **With Distillation:** `sh scripts/train_distill.sh` (Requires teacher weights in `models_data_v2_12_labels/`)
+When running from the server:
+* **From Scratch:** `sbatch scripts/train_baseline.slurm`
+* **With Distillation:** `sbtach scripts/train_distill.slurm` (Requires teacher weights in `models_data_v2_12_labels/`)
 
 ---
 
