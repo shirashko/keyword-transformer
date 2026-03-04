@@ -54,6 +54,9 @@ echo "Starting KWT Distillation Training at: $(date)"
 echo "Teacher Model configuration: $KWS_PATH/distill_att_mh_rnn.json"
 
 # --- Execution ---
+# NOTE: --start_step 48500 is hardcoded from a specific interrupted training session.
+# If resuming YOUR OWN training, update this value to match your checkpoint's actual step,
+# or remove it to auto-detect from the checkpoint. Do NOT reuse this value blindly.
 $PYTHON_EXEC -m kws_streaming.train.model_train_eval \
   $START_CHECKPOINT_PARAM \
    --start_step 48500 \

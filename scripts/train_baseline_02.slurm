@@ -48,6 +48,9 @@ fi
 echo "Starting KWT Training at: $(date)"
 
 # --- Execution ---
+# NOTE: --start_step 27216 is hardcoded from a specific interrupted training session.
+# If resuming YOUR OWN training, update this value to match your checkpoint's actual step,
+# or remove it to auto-detect from the checkpoint. Do NOT reuse this value blindly.
 python -m kws_streaming.train.model_train_eval \
   $START_CHECKPOINT_PARAM \
   --start_step 27216 \
