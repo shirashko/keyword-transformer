@@ -11,7 +11,7 @@
 The first training run on the university server produced a **baseline KWT-1** model and a **distillation KWT-1** model. The distillation model showed 100% validation accuracy, which raised concerns. After investigation, we found:
 
 - The optimizer was changed from **AdamW** (with weight decay) to **plain Adam** (no weight decay) — affecting both runs.
-- The distillation model's 100% validation accuracy was misleading — on the **test set** it scored **96.10%**, worse than the baseline's **97.27%**.
+- The distillation model's 100% validation accuracy was misleading — on the **test set** it scored **96.35%**, worse than the baseline's **97.17%**.
 - Multiple compounding factors contributed to the inflated validation accuracy.
 
 ---
@@ -170,18 +170,25 @@ We evaluated both checkpoints on the **test set** (never seen during training or
 
 | Model | Val Accuracy | **Test Accuracy** | Paper (KWT-1) |
 |---|---|---|---|
-| Baseline | 96.88% | **97.27%** | 97.72% |
-| Distillation (ensemble) | 100% | **96.10%** | 98.08% |
-| Distillation (label head only) | — | 96.08% | — |
-| Distillation (distill head only) | — | 96.15% | — |
+| Baseline | 96.88% | **97.17%** | 97.72% |
+| Distillation (ensemble) | 100% | **96.35%** | 98.08% |
+| Distillation (label head only) | — | 96.35% | — |
+| Distillation (distill head only) | — | 96.38% | — |
 
 **The distillation model with 100% validation accuracy performs worse than the baseline on the test set.**
 
-The baseline result (97.27%) is reasonably close to the paper's 97.72%, despite missing weight decay. The distillation model (96.10%) significantly underperforms, ~2% below the paper's 98.08%.
+The baseline result (97.17%) is reasonably close to the paper's 97.72%, despite missing weight decay. The distillation model (96.35%) significantly underperforms, ~1.7% below the paper's 98.08%.
 
-### 6.2 Eval Script
+### 6.2 Eval Methods
 
-The standard eval code (`kws_streaming/train/test.py`) uses `model.load_weights()` which is incompatible with the `tf.train.Saver` checkpoint format used by the current branch. We wrote a custom eval script (`eval_checkpoint.py`) that loads checkpoints via `tf.train.Saver`.
+Two eval methods were used and produce consistent results:
+
+1. **`test.tf_non_stream_model_accuracy()`** — the standard eval function in `test.py`, fixed to use `tf.train.Saver` (was broken due to `model.load_weights()` / `saver.save()` mismatch). Uses `model.predict()` + `np.argmax` to count correct samples.
+2. **`eval_checkpoint.py`** — custom standalone script using `model.test_on_batch()` with Keras accuracy metric. Also supports distillation models (reports per-head accuracy).
+
+Both methods give the same baseline accuracy (97.17%), confirming correctness.
+
+> **Note:** The full `model_train_eval.py --train 0` path still fails because `convert_model_saved()` (SavedModel export) has a TF1/TF2 compatibility issue unrelated to checkpoint loading. The accuracy functions themselves work correctly.
 
 ```bash
 # Setup
@@ -211,7 +218,7 @@ python eval_checkpoint.py \
 
 > **Note:** The dataset (~2.3GB) auto-downloads on first run if not present locally. Audio feature flags (`--mel_num_bins 80 --dct_num_features 40` etc.) must be passed explicitly — the defaults don't match the training config.
 
-> **Note:** The eval code in `test.py` uses `model.load_weights()` (object-based checkpoints), but the branch changed saving to `tf.train.Saver` (name-based checkpoints). These are incompatible. The custom `eval_checkpoint.py` works around this by also using `tf.train.Saver` for loading.
+> **Note:** The eval code in `test.py` originally used `model.load_weights()` (object-based), incompatible with the `tf.train.Saver` (name-based) checkpoints produced by the updated `train.py`. This was fixed — all 5 `load_weights()` calls in `test.py` were replaced with `tf.train.Saver` + `saver.restore()`.
 
 ---
 
