@@ -65,13 +65,79 @@ All KWT experiments in Berg et al. share a single set of hyperparameters (Table 
 
 ---
 
-## 3. Test Set Results
+## 3. Training Curves
+
+### Original Paper KWT-1 (reference)
+
+The paper authors' training with correct AdamW, `batch_size=512`, 23,000 steps:
+
+![Original paper accuracy](../graphs/original-paper.jpg)
+
+Validation accuracy reaches ~98% with smooth convergence. Train accuracy is noisy (~93%) due to augmentation -- this gap is normal and expected.
+
+---
+
+### 1st SLURM Job (~24 hours, partial training)
+
+The first SLURM job ran on the `studentkillable` partition for ~24 hours before being preempted. Baseline reached ~28k of 47k steps. Distillation reached ~48k of 120k steps.
+
+**Baseline** -- accuracy and loss:
+
+![1st run baseline accuracy](../graphs/acc-1-b.jpg)
+![1st run baseline loss](../graphs/loss-1-b.jpg)
+
+The baseline behaves well. Validation accuracy (orange) rises quickly to ~96% and stabilizes. Train accuracy (dark gray) is noisy but improves steadily. Loss curves show healthy convergence -- validation loss drops smoothly to ~0.61.
+
+**Distillation** -- accuracy and loss:
+
+![1st run distillation accuracy](../graphs/acc-1-d.jpg)
+![1st run distillation loss](../graphs/loss-1-d.jpg)
+
+Distillation starts slower than baseline. At 48k steps, validation accuracy is ~98% and still improving. Train accuracy is much noisier and lower (~85-90%) -- partly because training measures a single head on augmented data, while validation measures the ensemble on clean data. Loss is still decreasing, suggesting the model hasn't converged yet.
+
+---
+
+### Full Run (3rd SLURM Job -- all training completed)
+
+After three SLURM jobs, baseline completed all 46,876 steps and distillation completed all 120,000 steps.
+
+**Baseline** -- accuracy and loss:
+
+![3rd run baseline accuracy](../graphs/acc-3-b.jpg)
+![3rd run baseline loss](../graphs/loss-3-b.jpg)
+
+The full baseline training looks similar to the partial run. Validation accuracy (green) plateaus at ~97%, close to the paper's 97.72%. Validation loss settles at ~0.60. The model is well-trained and not overfitting.
+
+**Distillation** -- accuracy and loss:
+
+![3rd run distillation accuracy](../graphs/acc-3-d.jpg)
+![3rd run distillation loss](../graphs/loss-3-d.jpg)
+
+The distillation model trains for 120k steps but only reaches ~97% validation accuracy -- roughly the same as baseline despite 2.5x more gradient updates. Train accuracy (orange) plateaus around 88% and becomes increasingly noisy after ~80k steps. Validation loss settles at ~0.63, slightly higher than baseline's 0.60.
+
+The distillation model shows signs of not benefiting from the extended training: after ~60k steps, there's little improvement. Without weight decay, the extra 70k steps don't help -- they just add noise.
+
+---
+
+### Comparing Baseline vs Distillation
+
+| Metric | Baseline (47k steps) | Distillation (120k steps) | Paper Baseline | Paper Distill |
+|:-------|:---------------------|:--------------------------|:---------------|:--------------|
+| Val accuracy | ~97% | ~97% | ~97.7% | ~98.1% |
+| Train accuracy | ~89% | ~88% | ~93% | -- |
+| Val loss | 0.60 | 0.63 | -- | -- |
+| **Test accuracy** | **97.52%** | **97.06%** | **97.72%** | **98.08%** |
+
+In the paper, distillation improves accuracy by +0.36%. In our runs, distillation is **0.46% worse** than baseline. The distillation model trains for longer but learns less effectively because:
+- No weight decay means the teacher signal doesn't regularize as intended
+- The very low effective LR (0.0001 vs paper's 0.001) slows convergence
+- 120k gradient updates without regularization leads to noisier, less stable training
+
+---
+
+## 4. Test Set Results
 
 We evaluated all available checkpoints on the **test set** (unseen during both training and validation).
-
-### All runs
-
-Training was split across multiple SLURM jobs on the `studentkillable` partition (~24h each). Each subsequent checkpoint includes the continued training from all prior jobs.
 
 | Checkpoint | Baseline | Distillation |
 |:-----------|:---------|:-------------|
@@ -83,8 +149,8 @@ Training was split across multiple SLURM jobs on the `studentkillable` partition
 
 Key observations:
 - The **original paper checkpoint reproduces** their reported result (97.71% vs 97.72%).
-- Our baseline **improved** with each continued run (97.08% → 97.44% → 97.52%), getting close to the paper.
-- Our distillation **also improved** (96.17% → 97.13% → 97.06%), but **never overtakes the baseline** and falls ~1% short of the paper's 98.08%.
+- Our baseline **improved** with each continued run (97.08% -> 97.44% -> 97.52%), getting close to the paper.
+- Our distillation **also improved** (96.17% -> 97.13% -> 97.06%), but **never overtakes the baseline** and falls ~1% short of the paper's 98.08%.
 - Distillation should outperform baseline (paper shows +0.36%), but ours is 0.46% worse -- confirming the missing weight decay is the bottleneck.
 
 ### How to reproduce
@@ -118,33 +184,29 @@ python eval_checkpoint.py \
 
 ---
 
-## 4. Why 100% Val but Only 96% Test?
+## 5. Why Distillation Underperforms
 
-The model never trains on validation data, so this isn't classical overfitting. Instead, several factors combine to produce overconfident predictions that happen to be correct on the fixed validation set but don't fully generalize.
+In the paper, distillation consistently improves over baseline. In our runs, it doesn't. Several factors explain this:
 
-### No weight decay
+### No weight decay (Adam instead of AdamW)
 
-Both runs use plain Adam. Without weight decay, weights grow freely, making predictions sharper over time. The baseline survives because it trains for fewer steps.
+Both runs use plain Adam. The `train.py` code was changed to replace `AdamWeightDecay` with `tf.keras.optimizers.Adam`, dropping weight decay entirely. Without weight decay, the teacher's knowledge distillation signal doesn't regularize the student as intended -- the model can memorize rather than generalize.
 
-### 2.5x more gradient updates
+### 5x more gradient updates without regularization
 
-Both runs see the same 12M training examples, but the distillation model takes 120k gradient steps vs 47k. Each step without weight decay lets weights grow further.
+The distillation model takes 120k gradient steps (vs 47k for baseline) because of the smaller batch size (100 vs 256). Each step without weight decay allows weights to grow further. The paper uses only 23k steps with `weight_decay=0.1` keeping weights in check.
 
-### Very low effective learning rate
+### 10x lower effective learning rate
 
-The LR is scaled by `batch_size / 512`. With `batch_size=100`, the distillation model's peak LR is only **0.0001** -- ten times lower than the paper's 0.001. This allows the model to slowly and precisely fit the clean data distribution over 120k steps.
+The LR is scaled by `batch_size / 512`. With `batch_size=100`, the distillation model's peak LR is only **0.0001** -- ten times lower than the paper's 0.001. This slows convergence and means the model needs many more steps to learn the same amount.
 
-### Augmentation gap
+### Augmentation gap between train and val
 
-Training uses heavy augmentation (SpecAugment, time shifting, resampling, background noise). Validation and test use none. The model learns sharp decision boundaries that classify clean audio perfectly but break under perturbation -- explaining the 84% train accuracy alongside 100% val accuracy.
-
-### Ensemble smoothing
-
-Val accuracy reports the **ensemble** (average of class + distill token logits), which is more robust than either head alone. This gives a small accuracy boost on the clean val set.
+Training uses heavy augmentation (SpecAugment, time shifting, resampling, background noise). Validation uses none. This is normal -- the paper has the same setup -- but without weight decay the model becomes overconfident on clean data, widening the gap between train and val accuracy.
 
 ---
 
-## 5. Fixes for Next Run
+## 6. Fixes for Next Run
 
 ### Code fix -- restore AdamW in `train.py`
 
@@ -178,7 +240,7 @@ The branch changed saving to `tf.train.Saver` (name-based format) but `test.py` 
 
 ---
 
-## 6. Local Environment Setup
+## 7. Local Environment Setup
 
 ```bash
 # TF 2.4 doesn't install on Python 3.10/macOS -- use TF 2.15 (matches server)
