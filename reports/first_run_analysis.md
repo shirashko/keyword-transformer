@@ -63,81 +63,14 @@ All KWT experiments in Berg et al. share a single set of hyperparameters (Table 
 
 ---
 
-## 3. The AdamW Bug
-
-The optimizer was changed in `train.py` but not replaced with an equivalent:
-
-**Before (master):**
-```python
-from transformers import AdamWeightDecay
-
-optimizer = AdamWeightDecay(
-    learning_rate=0.05,        # BUG: hardcoded, should use flags.learning_rate
-    weight_decay_rate=flags.l2_weight_decay,
-    exclude_from_weight_decay=["pos_emb", "class_emb", "layer_normalization", "bias"]
-)
-```
-
-**After (this branch):**
-```python
-optimizer = tf.keras.optimizers.Adam(learning_rate=float(flags.learning_rate))
-```
-
-Both scripts pass `--optimizer "adamw"`, so both hit this code path. The result: **plain Adam with zero weight decay** for both runs.
-
-**Why this matters:** AdamW shrinks weights every step by `weight_decay * lr`, preventing overconfident predictions. Without it, weights grow freely. The paper emphasizes that `weight_decay=0.1` was "important" for keyword spotting.
-
----
-
-## 4. Training Curves (TensorBoard)
-
-### Loss
-
-| Run | Final Value | Steps |
-|:----|:------------|:------|
-| Baseline -- train | 0.77 | 46,876 |
-| Baseline -- val | 0.60 | 46,876 |
-| Distill -- train | 0.85 | 120,000 |
-| Distill -- val | **0.54** | 120,000 |
-
-The distillation val loss (0.54) is near the theoretical minimum with `label_smoothing=0.1` (~0.53 for 12 classes), meaning the model predicts every validation sample correctly with ~95% confidence.
-
-### Accuracy
-
-| Run | Final Value | Steps |
-|:----|:------------|:------|
-| Baseline -- train | 89% | 46,876 |
-| Baseline -- val | **96.9%** | 46,876 |
-| Distill -- train | 84% | 120,000 |
-| Distill -- val | **100%** | 120,000 |
-
-Two things stand out:
-- **100% val accuracy** exceeds any published result (paper's best KWT-3 with distillation: 98.56%).
-- **Distill train accuracy (84%)** is *lower* than baseline (89%) despite 2.5x more training steps.
-
-### Metric asymmetry in TensorBoard
-
-The train and val accuracy metrics measure different things for the distillation model:
-
-| | Metric | Data |
-|:--|:-------|:-----|
-| Train | Single class head | Augmented |
-| Val | **Ensemble** of both heads | **Clean** |
-
-This is defined in `train.py` -- train logs `acc_label` (line 211), val logs `acc_ensemble` (line 251). This makes the train/val gap appear larger than it really is.
-
----
-
-## 5. Test Set Results
+## 3. Test Set Results
 
 We evaluated both checkpoints on the **test set** (unseen during both training and validation). Two independent eval methods produced identical results.
 
 | Model | Val Accuracy | Test Accuracy | Paper |
 |:------|:-------------|:--------------|:------|
 | Baseline | 96.88% | **97.17%** | 97.72% |
-| Distillation -- ensemble | 100% | **96.35%** | 98.08% |
-| Distillation -- label head | -- | 96.35% | -- |
-| Distillation -- distill head | -- | 96.38% | -- |
+| Distillation | **100%** | **96.35%** | 98.08% |
 
 **The distillation model with 100% val accuracy scores 0.8% below the baseline on the test set.** The baseline (97.17%) is close to the paper's 97.72% despite missing weight decay.
 
@@ -172,7 +105,7 @@ python eval_checkpoint.py \
 
 ---
 
-## 6. Why 100% Val but Only 96% Test?
+## 4. Why 100% Val but Only 96% Test?
 
 The model never trains on validation data, so this isn't classical overfitting. Instead, several factors combine to produce overconfident predictions that happen to be correct on the fixed validation set but don't fully generalize.
 
@@ -198,7 +131,7 @@ Val accuracy reports the **ensemble** (average of class + distill token logits),
 
 ---
 
-## 7. Fixes for Next Run
+## 5. Fixes for Next Run
 
 ### Code fix -- restore AdamW in `train.py`
 
@@ -232,7 +165,7 @@ The branch changed saving to `tf.train.Saver` (name-based format) but `test.py` 
 
 ---
 
-## 8. Local Environment Setup
+## 6. Local Environment Setup
 
 ```bash
 # TF 2.4 doesn't install on Python 3.10/macOS -- use TF 2.15 (matches server)
