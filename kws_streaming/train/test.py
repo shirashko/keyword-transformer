@@ -217,7 +217,7 @@ def tf_non_stream_model_accuracy(
     flags,
     folder,
     time_shift_samples=0,
-    weights_name='best_weights',
+    weights_name='best_weights.ckpt',
     accuracy_name='tf_non_stream_model_accuracy.txt'):
   """Compute accuracy of non streamable model using TF.
 
@@ -252,7 +252,9 @@ def tf_non_stream_model_accuracy(
   set_size = int(set_size / flags.batch_size) * flags.batch_size
   model = models.MODELS[flags.model_name](flags)
   weights_path = os.path.join(flags.train_dir, weights_name)
-  model.load_weights(weights_path).expect_partial()
+  saver = tf.train.Saver()
+  sess.run(tf.compat.v1.global_variables_initializer())
+  saver.restore(sess, weights_path)
   total_accuracy = 0.0
   count = 0.0
   is_distilled = flags.distill_teacher_json
@@ -282,11 +284,14 @@ def tf_non_stream_model_accuracy(
   fname_summary = 'model_summary_non_stream'
   utils.save_model_summary(model, path, file_name=fname_summary + '.txt')
 
-  tf.keras.utils.plot_model(
-      model,
-      to_file=os.path.join(path, fname_summary + '.png'),
-      show_shapes=True,
-      expand_nested=True)
+  try:
+    tf.keras.utils.plot_model(
+        model,
+        to_file=os.path.join(path, fname_summary + '.png'),
+        show_shapes=True,
+        expand_nested=True)
+  except Exception as e:
+    logging.warning('Could not plot model: %s', e)
 
   with open(os.path.join(path, accuracy_name), 'wt') as fd:
     fd.write('%f on set_size %d' % (total_accuracy * 100, set_size))
@@ -296,7 +301,7 @@ def tf_non_stream_model_accuracy(
 def tf_stream_state_internal_model_accuracy(
     flags,
     folder,
-    weights_name='best_weights',
+    weights_name='best_weights.ckpt',
     accuracy_name='tf_stream_state_internal_model_accuracy_sub_set.txt',
     max_test_samples=1000):
   """Compute accuracy of streamable model with internal state using TF.
@@ -331,7 +336,9 @@ def tf_stream_state_internal_model_accuracy(
   flags.batch_size = inference_batch_size  # set batch size
   model = models.MODELS[flags.model_name](flags)
   weights_path = os.path.join(flags.train_dir, weights_name)
-  model.load_weights(weights_path).expect_partial()
+  saver = tf.train.Saver()
+  sess.run(tf.compat.v1.global_variables_initializer())
+  saver.restore(sess, weights_path)
 
   model_stream = utils.to_streaming_inference(
       model, flags, modes.Modes.STREAM_INTERNAL_STATE_INFERENCE)
@@ -393,7 +400,7 @@ def tf_stream_state_internal_model_accuracy(
 def tf_stream_state_external_model_accuracy(
     flags,
     folder,
-    weights_name='best_weights',
+    weights_name='best_weights.ckpt',
     accuracy_name='stream_state_external_model_accuracy_sub_set.txt',
     reset_state=False,
     max_test_samples=1000):
@@ -428,7 +435,9 @@ def tf_stream_state_external_model_accuracy(
   flags.batch_size = inference_batch_size  # set batch size
   model = models.MODELS[flags.model_name](flags)
   weights_path = os.path.join(flags.train_dir, weights_name)
-  model.load_weights(weights_path).expect_partial()
+  saver = tf.train.Saver()
+  sess.run(tf.compat.v1.global_variables_initializer())
+  saver.restore(sess, weights_path)
   model_stream = utils.to_streaming_inference(
       model, flags, modes.Modes.STREAM_EXTERNAL_STATE_INFERENCE)
 
@@ -715,7 +724,7 @@ def convert_model_tflite(flags,
                          folder,
                          mode,
                          fname,
-                         weights_name='best_weights',
+                         weights_name='best_weights.ckpt',
                          optimizations=None):
   """Convert model to streaming and non streaming TFLite.
 
@@ -737,7 +746,9 @@ def convert_model_tflite(flags,
   flags.approximate_gelu = True # use approximate GELU in TFLite
   model = models.MODELS[flags.model_name](flags)
   weights_path = os.path.join(flags.train_dir, weights_name)
-  model.load_weights(weights_path).expect_partial()
+  saver = tf.train.Saver()
+  sess.run(tf.compat.v1.global_variables_initializer())
+  saver.restore(sess, weights_path)
   # convert trained model to non streaming TFLite stateless
   # to finish other tests we do not stop program if exception happen here
   path_model = os.path.join(flags.train_dir, folder)
@@ -754,7 +765,7 @@ def convert_model_tflite(flags,
     logging.warning('FAILED to convert to mode %s, tflite: %s', mode, e)
 
 
-def convert_model_saved(flags, folder, mode, weights_name='best_weights'):
+def convert_model_saved(flags, folder, mode, weights_name='best_weights.ckpt'):
   """Convert model to streaming and non streaming SavedModel.
 
   Args:
@@ -772,7 +783,9 @@ def convert_model_saved(flags, folder, mode, weights_name='best_weights'):
   flags.batch_size = 1  # set batch size for inference
   model = models.MODELS[flags.model_name](flags)
   weights_path = os.path.join(flags.train_dir, weights_name)
-  model.load_weights(weights_path).expect_partial()
+  saver = tf.train.Saver()
+  sess.run(tf.compat.v1.global_variables_initializer())
+  saver.restore(sess, weights_path)
 
   path_model = os.path.join(flags.train_dir, folder)
   if not os.path.exists(path_model):
