@@ -114,7 +114,9 @@ def train(flags):
         weight_decay=flags.novograd_weight_decay,
         grad_averaging=bool(flags.novograd_grad_averaging))
   elif flags.optimizer == 'adamw':
-    optimizer = tf.keras.optimizers.Adam(learning_rate=float(flags.learning_rate))
+    optimizer = tfa.optimizers.AdamW(
+        learning_rate=float(flags.learning_rate),
+        weight_decay=flags.l2_weight_decay)
   else:
     raise ValueError('Unsupported optimizer:%s' % flags.optimizer)
 
