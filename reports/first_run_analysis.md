@@ -1,202 +1,154 @@
-# First Run Analysis Report
+# First Run Analysis
 
-**Date:** 2026-03-21
-**Branch:** `feat/update-scripts-and-readme`
-**Runs analyzed:** `models_data_v2_12_labels/first_run_on_server/kwt1_baseline/` and `kwt1_distill/`
+> **Date:** 2026-03-21 | **Branch:** `feat/update-scripts-and-readme` | **Checkpoints:** `models_data_v2_12_labels/first_run_on_server/`
 
 ---
 
-## 1. Summary
+## TL;DR
 
-The first training run on the university server produced a **baseline KWT-1** model and a **distillation KWT-1** model. The distillation model showed 100% validation accuracy, which raised concerns. After investigation, we found:
+| Model | Val Accuracy | Test Accuracy | Paper Target |
+|:------|:-------------|:--------------|:-------------|
+| Baseline KWT-1 | 96.88% | **97.17%** | 97.72% |
+| Distillation KWT-1 | **100%** | **96.35%** | 98.08% |
 
-- The optimizer was changed from **AdamW** (with weight decay) to **plain Adam** (no weight decay) — affecting both runs.
-- The distillation model's 100% validation accuracy was misleading — on the **test set** it scored **96.35%**, worse than the baseline's **97.17%**.
-- Multiple compounding factors contributed to the inflated validation accuracy.
+The distillation model's perfect validation score is misleading. On the held-out test set, it actually performs **worse** than the baseline. The root cause is a code change that replaced **AdamW** (with weight decay) with **plain Adam** (no regularization), compounded by several other deviations from the paper's setup.
 
 ---
 
-## 2. Paper Reference (Table 2 — Hyperparameters)
+## 1. What the Paper Prescribes
 
-The KWT paper (Berg et al.) specifies a single set of hyperparameters for **all** experiments (baseline and distillation):
+All KWT experiments in Berg et al. share a single set of hyperparameters (Table 2):
 
-| Parameter | Paper Value |
-|---|---|
-| Batch size | **512** |
-| Training steps | **23,000** |
-| Optimizer | **AdamW** |
-| Learning rate | **0.001** |
-| LR schedule | Cosine |
+| Parameter | Value |
+|:----------|:------|
+| Optimizer | AdamW |
+| Weight decay | 0.1 |
+| Learning rate | 0.001 |
+| Batch size | 512 |
+| Steps | 23,000 |
 | Warmup epochs | 10 |
-| Weight decay | **0.1** |
 | Label smoothing | 0.1 |
-| Dropout | 0 |
-
-Paper results for KWT-1 on V2-12:
-- **Baseline:** 97.72%
-- **With distillation:** 98.08%
+| LR schedule | Cosine |
 
 ---
 
-## 3. What We Ran vs. What the Paper Specifies
+## 2. What We Ran
 
-### 3.1 Baseline (`scripts/train_baseline.slurm`)
+### Baseline (`scripts/train_baseline.slurm`)
 
-| Parameter | Our Value | Paper Value | Match? |
-|---|---|---|---|
-| Batch size | 256 | 512 | No (half) |
-| Training steps | 46,876 | 23,000 | Adjusted (same 12M total examples) |
-| Optimizer | **Adam** (bug) | AdamW | **NO** |
-| Learning rate | 0.0005 | 0.001 | No (half) |
-| Weight decay | 0.1 (flag) / **0 (actual)** | 0.1 | **NO (ignored by code)** |
-| Warmup epochs | 10 | 10 | Yes |
-| Effective LR (after batch scaling) | 0.00025 | 0.001 | No (4x lower) |
+| Parameter | Ours | Paper | Issue |
+|:----------|:-----|:------|:------|
+| Optimizer | Adam | AdamW | **Bug** -- weight decay removed |
+| Weight decay | 0 (code ignores flag) | 0.1 | **Bug** |
+| Learning rate | 0.0005 | 0.001 | Half |
+| Batch size | 256 | 512 | Half |
+| Steps | 46,876 | 23,000 | Scaled for batch size (same 12M examples) |
+| Warmup epochs | 10 | 10 | OK |
+| Effective LR | 0.00025 | 0.001 | 4x lower (LR is scaled by `batch/512`) |
 
-### 3.2 Distillation (`scripts/train_distill.slurm`)
+### Distillation (`scripts/train_distill.slurm`)
 
-| Parameter | Our Value | Paper Value | Match? |
-|---|---|---|---|
-| Batch size | **100** | 512 | **No (5x smaller)** |
-| Training steps | 120,000 | 23,000 | Adjusted (same 12M total examples) |
-| Optimizer | **Adam** (bug) | AdamW | **NO** |
-| Learning rate | 0.0005 | 0.001 | No (half) |
-| Weight decay | **0.0** (flag) / **0 (actual)** | 0.1 | **NO** |
-| Warmup epochs | 5 | 10 | No (half) |
-| Effective LR (after batch scaling) | **0.0000977** | 0.001 | **No (10x lower)** |
+| Parameter | Ours | Paper | Issue |
+|:----------|:-----|:------|:------|
+| Optimizer | Adam | AdamW | **Bug** -- same as baseline |
+| Weight decay | 0 | 0.1 | **Bug** -- also passed `--l2_weight_decay 0.0` |
+| Learning rate | 0.0005 | 0.001 | Half |
+| Batch size | **100** | 512 | **5x smaller** (inherited from upstream ARM repo) |
+| Steps | 120,000 | 23,000 | Scaled for batch size (same 12M examples) |
+| Warmup epochs | 5 | 10 | Half |
+| Effective LR | **0.0001** | 0.001 | **10x lower** |
+| Gradient updates | **120k** | 23k | **5x more** weight updates |
 
-### 3.3 Key Differences Between Our Baseline and Distillation Scripts
-
-| | Baseline | Distillation |
-|---|---|---|
-| Batch size | 256 | 100 |
-| Steps | 46,876 | 120,000 |
-| Gradient updates | 46.8k | **120k (2.5x more)** |
-| `--l2_weight_decay` flag | 0.1 | 0.0 |
-| `--warmup_epochs` | 10 | 5 |
-| Effective peak LR | 0.00025 | 0.0000977 |
-| `--eval_step_interval` | 144 | 500 |
-| Total examples seen | ~12M | ~12M |
-
-> **Note:** The `batch_size=100` for distillation was inherited from the original ARM upstream repo (`distill.sh`), which also used `--l2_weight_decay 0.`. These values contradict the paper. The default in `kws_streaming/models/model_params.py:74` is also `batch_size = 100`.
+> The `batch_size=100` for distillation was copied from the upstream ARM repo's `distill.sh` and the default in `model_params.py:74`. It contradicts the paper.
 
 ---
 
-## 4. The AdamW vs Adam Bug
+## 3. The AdamW Bug
 
-### What the code was (master branch):
+The optimizer was changed in `train.py` but not replaced with an equivalent:
 
+**Before (master):**
 ```python
-# kws_streaming/train/train.py (master)
 from transformers import AdamWeightDecay
 
-elif flags.optimizer == 'adamw':
-    exclude = ["pos_emb", "class_emb", "layer_normalization", "bias"]
-    optimizer = AdamWeightDecay(
-        learning_rate=0.05,  # NOTE: hardcoded, ignores flags.learning_rate
-        weight_decay_rate=flags.l2_weight_decay,
-        exclude_from_weight_decay=exclude
-    )
+optimizer = AdamWeightDecay(
+    learning_rate=0.05,        # BUG: hardcoded, should use flags.learning_rate
+    weight_decay_rate=flags.l2_weight_decay,
+    exclude_from_weight_decay=["pos_emb", "class_emb", "layer_normalization", "bias"]
+)
 ```
 
-### What the code is now (this branch):
-
+**After (this branch):**
 ```python
-# kws_streaming/train/train.py (feat/update-scripts-and-readme)
-elif flags.optimizer == 'adamw':
-    optimizer = tf.keras.optimizers.Adam(learning_rate=float(flags.learning_rate))
+optimizer = tf.keras.optimizers.Adam(learning_rate=float(flags.learning_rate))
 ```
 
-**Both runs pass `--optimizer "adamw"`**, so both hit this code path. The result is **plain Adam with zero weight decay** for both baseline and distillation.
+Both scripts pass `--optimizer "adamw"`, so both hit this code path. The result: **plain Adam with zero weight decay** for both runs.
 
-### What AdamW does differently from Adam
-
-- **Adam**: Updates weights using adaptive learning rates based on gradient moments. No weight regularization.
-- **AdamW**: Same as Adam, but additionally **shrinks weights by a factor of `weight_decay * lr` every step**. This keeps weights small and prevents overconfident predictions.
-
-The paper specifically notes that increasing weight decay from 0.05 to **0.1** was "important" for keyword spotting.
-
-> **Note:** The master branch code also had a bug: `learning_rate=0.05` was hardcoded instead of using `flags.learning_rate`. Any fix should address both issues.
+**Why this matters:** AdamW shrinks weights every step by `weight_decay * lr`, preventing overconfident predictions. Without it, weights grow freely. The paper emphasizes that `weight_decay=0.1` was "important" for keyword spotting.
 
 ---
 
-## 5. Training Curves Analysis (TensorBoard)
+## 4. Training Curves (TensorBoard)
 
-### 5.1 Loss Graph
+### Loss
 
-| Run | Smoothed | Final Value | Steps |
-|---|---|---|---|
-| kwt1_baseline / train | 0.9072 | 0.7667 | 46,876 |
-| kwt1_baseline / validation | 0.6008 | 0.6008 | 46,876 |
-| kwt1_distill / train | 0.833 | 0.847 | 120,000 |
-| kwt1_distill / validation | 0.5434 | 0.5435 | 120,000 |
+| Run | Final Value | Steps |
+|:----|:------------|:------|
+| Baseline -- train | 0.77 | 46,876 |
+| Baseline -- val | 0.60 | 46,876 |
+| Distill -- train | 0.85 | 120,000 |
+| Distill -- val | **0.54** | 120,000 |
 
-- Baseline train loss (cyan): Noisy but trending down. Normal.
-- Baseline val loss (pink): Smooth convergence to 0.60. Healthy.
-- Distill train loss (dark gray): Very noisy, barely decreasing after ~40k steps.
-- Distill val loss (orange): Converges to **0.5435**, which is near the theoretical minimum with `label_smoothing=0.1` (~0.526 for 12 classes). This means the model predicts every validation sample with ~95% confidence on the correct class.
+The distillation val loss (0.54) is near the theoretical minimum with `label_smoothing=0.1` (~0.53 for 12 classes), meaning the model predicts every validation sample correctly with ~95% confidence.
 
-### 5.2 Accuracy Graph
+### Accuracy
 
-| Run | Smoothed | Final Value | Steps |
-|---|---|---|---|
-| kwt1_baseline / train | 0.835 | 0.8945 | 46,876 |
-| kwt1_baseline / validation | 0.9687 | 0.9688 | 46,876 |
-| kwt1_distill / train | 0.8559 | 0.84 | 120,000 |
-| kwt1_distill / validation | **1.0** | **1.0** | 120,000 |
+| Run | Final Value | Steps |
+|:----|:------------|:------|
+| Baseline -- train | 89% | 46,876 |
+| Baseline -- val | **96.9%** | 46,876 |
+| Distill -- train | 84% | 120,000 |
+| Distill -- val | **100%** | 120,000 |
 
-- Distillation validation accuracy reached **100%**, which is higher than any published result (paper's best: 98.56% with KWT-3).
-- Distillation train accuracy (84%) is **lower** than baseline train accuracy (89%), despite training for 2.5x more steps.
+Two things stand out:
+- **100% val accuracy** exceeds any published result (paper's best KWT-3 with distillation: 98.56%).
+- **Distill train accuracy (84%)** is *lower* than baseline (89%) despite 2.5x more training steps.
 
-### 5.3 Important: Metric Asymmetry
+### Metric asymmetry in TensorBoard
 
-The TensorBoard metrics compare different things for train vs validation in the distillation model:
+The train and val accuracy metrics measure different things for the distillation model:
 
-| | What's measured | Data type |
-|---|---|---|
-| **Train accuracy** | Single class head (`acc_label`) | Augmented data |
-| **Val accuracy** | Ensemble of both heads (`acc_ensemble`) | Clean data |
+| | Metric | Data |
+|:--|:-------|:-----|
+| Train | Single class head | Augmented |
+| Val | **Ensemble** of both heads | **Clean** |
 
-This asymmetry is defined in `kws_streaming/train/train.py`:
-- Train logging (line 211): `tag='accuracy', simple_value=acc_label`
-- Val logging (line 251): `tag='accuracy', simple_value=acc_ensemble`
+This is defined in `train.py` -- train logs `acc_label` (line 211), val logs `acc_ensemble` (line 251). This makes the train/val gap appear larger than it really is.
 
 ---
 
-## 6. Test Set Evaluation
+## 5. Test Set Results
 
-We evaluated both checkpoints on the **test set** (never seen during training or validation) using a custom eval script.
+We evaluated both checkpoints on the **test set** (unseen during both training and validation). Two independent eval methods produced identical results.
 
-### 6.1 Results
-
-| Model | Val Accuracy | **Test Accuracy** | Paper (KWT-1) |
-|---|---|---|---|
+| Model | Val Accuracy | Test Accuracy | Paper |
+|:------|:-------------|:--------------|:------|
 | Baseline | 96.88% | **97.17%** | 97.72% |
-| Distillation (ensemble) | 100% | **96.35%** | 98.08% |
-| Distillation (label head only) | — | 96.35% | — |
-| Distillation (distill head only) | — | 96.38% | — |
+| Distillation -- ensemble | 100% | **96.35%** | 98.08% |
+| Distillation -- label head | -- | 96.35% | -- |
+| Distillation -- distill head | -- | 96.38% | -- |
 
-**The distillation model with 100% validation accuracy performs worse than the baseline on the test set.**
+**The distillation model with 100% val accuracy scores 0.8% below the baseline on the test set.** The baseline (97.17%) is close to the paper's 97.72% despite missing weight decay.
 
-The baseline result (97.17%) is reasonably close to the paper's 97.72%, despite missing weight decay. The distillation model (96.35%) significantly underperforms, ~1.7% below the paper's 98.08%.
-
-### 6.2 Eval Methods
-
-Two eval methods were used and produce consistent results:
-
-1. **`test.tf_non_stream_model_accuracy()`** — the standard eval function in `test.py`, fixed to use `tf.train.Saver` (was broken due to `model.load_weights()` / `saver.save()` mismatch). Uses `model.predict()` + `np.argmax` to count correct samples.
-2. **`eval_checkpoint.py`** — custom standalone script using `model.test_on_batch()` with Keras accuracy metric. Also supports distillation models (reports per-head accuracy).
-
-Both methods give the same baseline accuracy (97.17%), confirming correctness.
-
-> **Note:** The full `model_train_eval.py --train 0` path still fails because `convert_model_saved()` (SavedModel export) has a TF1/TF2 compatibility issue unrelated to checkpoint loading. The accuracy functions themselves work correctly.
+### How to reproduce
 
 ```bash
-# Setup
 source venv3/bin/activate
 export PYTHONPATH=$(pwd):$PYTHONPATH
 export TF_USE_LEGACY_KERAS=1
 
-# Baseline eval
+# Baseline
 python eval_checkpoint.py \
   ./models_data_v2_12_labels/first_run_on_server/kwt1_baseline/ \
   ./data2/speech_commands_v0.02/ \
@@ -205,7 +157,7 @@ python eval_checkpoint.py \
   kws_transformer --num_layers 12 --heads 1 --d_model 64 --mlp_dim 256 \
   --dropout1 0. --attention_type "time"
 
-# Distillation eval (requires --distill flag to build model with distillation token)
+# Distillation
 python eval_checkpoint.py \
   --distill ./distill_att_mh_rnn.json \
   ./models_data_v2_12_labels/first_run_on_server/kwt1_distill/ \
@@ -216,59 +168,52 @@ python eval_checkpoint.py \
   --dropout1 0. --attention_type "time"
 ```
 
-> **Note:** The dataset (~2.3GB) auto-downloads on first run if not present locally. Audio feature flags (`--mel_num_bins 80 --dct_num_features 40` etc.) must be passed explicitly — the defaults don't match the training config.
-
-> **Note:** The eval code in `test.py` originally used `model.load_weights()` (object-based), incompatible with the `tf.train.Saver` (name-based) checkpoints produced by the updated `train.py`. This was fixed — all 5 `load_weights()` calls in `test.py` were replaced with `tf.train.Saver` + `saver.restore()`.
+> The dataset (~2.3GB) auto-downloads on first run. Audio feature flags must be passed explicitly -- defaults don't match the training config.
 
 ---
 
-## 7. Root Cause Analysis — Why 100% Val Accuracy?
+## 6. Why 100% Val but Only 96% Test?
 
-The 100% validation accuracy is **real** (the model does classify all ~9,900 validation samples correctly) but **misleading** (it doesn't generalize — test accuracy is only 96.10%).
+The model never trains on validation data, so this isn't classical overfitting. Instead, several factors combine to produce overconfident predictions that happen to be correct on the fixed validation set but don't fully generalize.
 
-Contributing factors, ordered by importance:
+### No weight decay
 
-### 7.1 No weight decay (Adam instead of AdamW)
+Both runs use plain Adam. Without weight decay, weights grow freely, making predictions sharper over time. The baseline survives because it trains for fewer steps.
 
-Both runs use plain Adam. Without weight decay, weights grow unbounded, making predictions increasingly sharp/overconfident. The baseline survives because it trains for fewer steps. The paper's `weight_decay=0.1` is the primary regularizer.
+### 2.5x more gradient updates
 
-### 7.2 2.5x more gradient updates (120k vs 47k)
+Both runs see the same 12M training examples, but the distillation model takes 120k gradient steps vs 47k. Each step without weight decay lets weights grow further.
 
-Same total data (12M examples), but the distillation model does 120k weight updates vs 47k for baseline. Without weight decay to counteract this, the model overfits more with each additional update.
+### Very low effective learning rate
 
-### 7.3 Very low effective learning rate
+The LR is scaled by `batch_size / 512`. With `batch_size=100`, the distillation model's peak LR is only **0.0001** -- ten times lower than the paper's 0.001. This allows the model to slowly and precisely fit the clean data distribution over 120k steps.
 
-The cosine LR schedule scales by `batch_size / 512`:
-- Baseline: `0.0005 * 256/512 = 0.00025`
-- Distillation: `0.0005 * 100/512 = 0.0000977` (10x below paper's 0.001)
+### Augmentation gap
 
-The very low LR allows the model to slowly and precisely fit the clean data distribution.
+Training uses heavy augmentation (SpecAugment, time shifting, resampling, background noise). Validation and test use none. The model learns sharp decision boundaries that classify clean audio perfectly but break under perturbation -- explaining the 84% train accuracy alongside 100% val accuracy.
 
-### 7.4 Distillation provides an easier learning signal
+### Ensemble smoothing
 
-The teacher (MHAtt-RNN, ~98.4% accurate) reinforces correct predictions. Both heads converge faster, leaving more steps for overfitting.
-
-### 7.5 Augmentation asymmetry
-
-Heavy augmentation during training (SpecAugment, time shift, resampling, noise) but none during validation. The model learns sharp decision boundaries that work on clean data but break under augmentation. This is not "overfitting to validation" — the model never trains on validation data — but it produces misleadingly high validation accuracy.
-
-### 7.6 Ensemble metric on validation
-
-Validation reports the **ensemble** of two heads on clean data, while training reports a **single head** on augmented data. This inflates the apparent gap.
+Val accuracy reports the **ensemble** (average of class + distill token logits), which is more robust than either head alone. This gives a small accuracy boost on the clean val set.
 
 ---
 
-## 8. Fixes for Next Run
+## 7. Fixes for Next Run
 
-1. **Restore AdamW with `weight_decay=0.1`** — Use `tfa.optimizers.AdamW` or restore `transformers.AdamWeightDecay` (fix the hardcoded `lr=0.05` on master).
-2. **Increase batch size** — Use 256 or 512 for distillation (not 100). Adjust steps to keep 12M total examples.
-3. **Match the paper's learning rate** — Use `0.001`, not `0.0005`.
-4. **Use `warmup_epochs=10`** for distillation (not 5).
-5. **Set `--l2_weight_decay 0.1`** for distillation (paper uses same weight decay for all experiments).
+### Code fix -- restore AdamW in `train.py`
 
-### Recommended distillation script changes:
+```python
+elif flags.optimizer == 'adamw':
+    optimizer = tfa.optimizers.AdamW(
+        learning_rate=float(flags.learning_rate),
+        weight_decay=flags.l2_weight_decay
+    )
+```
+
+### Script fixes -- match the paper
 
 ```diff
+  # Distillation script
 - --batch_size 100
 + --batch_size 256
 - --how_many_training_steps "120000"
@@ -281,24 +226,16 @@ Validation reports the **ensemble** of two heads on clean data, while training r
 + --warmup_epochs 10
 ```
 
-And in `train.py`, restore proper AdamW:
+### Checkpoint loading fix -- `test.py`
 
-```python
-elif flags.optimizer == 'adamw':
-    optimizer = tfa.optimizers.AdamW(
-        learning_rate=float(flags.learning_rate),
-        weight_decay=flags.l2_weight_decay
-    )
-```
+The branch changed saving to `tf.train.Saver` (name-based format) but `test.py` still used `model.load_weights()` (object-based), breaking the eval pipeline. All 5 `load_weights()` calls were updated to use `saver.restore()` and the default `weights_name` changed from `'best_weights'` to `'best_weights.ckpt'`.
 
 ---
 
-## 9. Environment Setup (Local Eval)
-
-To run evaluation locally (macOS):
+## 8. Local Environment Setup
 
 ```bash
-# TF 2.4 doesn't install on Python 3.10/macOS — use TF 2.15 (matches server)
+# TF 2.4 doesn't install on Python 3.10/macOS -- use TF 2.15 (matches server)
 python3.10 -m venv venv3
 source venv3/bin/activate
 pip install "tensorflow==2.15.*" "tf-keras==2.15.0" tensorflow_addons \
