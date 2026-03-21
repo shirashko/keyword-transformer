@@ -206,48 +206,23 @@ Training uses heavy augmentation (SpecAugment, time shifting, resampling, backgr
 
 ---
 
-## 6. Fixes for Next Run
-
-### Code fix -- restore AdamW in `train.py`
-
-```python
-elif flags.optimizer == 'adamw':
-    optimizer = tfa.optimizers.AdamW(
-        learning_rate=float(flags.learning_rate),
-        weight_decay=flags.l2_weight_decay
-    )
-```
-
-### Script fixes -- match the paper
-
-```diff
-  # Distillation script
-- --batch_size 100
-+ --batch_size 256
-- --how_many_training_steps "120000"
-+ --how_many_training_steps "46876"
-- --learning_rate "0.0005"
-+ --learning_rate "0.001"
-- --l2_weight_decay 0.0
-+ --l2_weight_decay 0.1
-- --warmup_epochs 5
-+ --warmup_epochs 10
-```
-
-### Checkpoint loading fix -- `test.py`
-
-The branch changed saving to `tf.train.Saver` (name-based format) but `test.py` still used `model.load_weights()` (object-based), breaking the eval pipeline. All 5 `load_weights()` calls were updated to use `saver.restore()` and the default `weights_name` changed from `'best_weights'` to `'best_weights.ckpt'`.
-
----
-
-## 7. Local Environment Setup
+## 6. Local Environment Setup
 
 ```bash
-# TF 2.4 doesn't install on Python 3.10/macOS -- use TF 2.15 (matches server)
 python3.10 -m venv venv3
 source venv3/bin/activate
-pip install "tensorflow==2.15.*" "tf-keras==2.15.0" tensorflow_addons \
-    pydot graphviz "numpy<2" absl-py transformers
+pip install -r requirements.txt
 ```
 
-The dataset auto-downloads to `data2/speech_commands_v0.02/` (~2.3GB).
+Mac users should also install the Metal GPU plugin:
+```bash
+pip install tensorflow-metal
+```
+
+The dataset (~2.3GB) auto-downloads on first run to `data2/speech_commands_v0.02/`.
+
+Remember to set the environment before running any training or eval:
+```bash
+export PYTHONPATH=$(pwd):$PYTHONPATH
+export TF_USE_LEGACY_KERAS=1
+```

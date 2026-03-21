@@ -1,7 +1,9 @@
-tensorflow==2.4.0rc1
-tensorflow_addons
+tensorflow==2.15.*
+tf-keras==2.15.0
+tensorflow-addons==0.23.0
+numpy<2
+absl-py
 pydot
 graphviz
-numpy==1.19.5
-absl-py
 transformers
+matplotlib
