@@ -1,17 +1,19 @@
-# First Run Analysis
+# Training Runs Analysis
 
-> **Date:** 2026-03-21 | **Branch:** `feat/update-scripts-and-readme` | **Checkpoints:** `models_data_v2_12_labels/first_run_on_server/`
+> **Date:** 2026-03-21 | **Branch:** `feat/update-scripts-and-readme` | **Checkpoints:** `models_data_v2_12_labels/`
 
 ---
 
 ## TL;DR
 
-| Model | Val Accuracy | Test Accuracy | Paper Target |
-|:------|:-------------|:--------------|:-------------|
-| Baseline KWT-1 | 96.88% | **97.17%** | 97.72% |
-| Distillation KWT-1 | **100%** | **96.35%** | 98.08% |
+| Checkpoint | Baseline | Distillation | Paper Target |
+|:-----------|:---------|:-------------|:-------------|
+| Original paper authors | **97.71%** | -- | 97.72% / 98.08% |
+| Our 1st SLURM job (~24h, partial) | 97.08% | 96.17% | |
+| Our 1st + 2nd SLURM jobs | 97.44% | 97.13% | |
+| Our full run (1st + 2nd + 3rd jobs) | **97.52%** | **97.06%** | |
 
-The distillation model's perfect validation score is misleading. On the held-out test set, it actually performs **worse** than the baseline. The root cause is a code change that replaced **AdamW** (with weight decay) with **plain Adam** (no regularization), compounded by several other deviations from the paper's setup.
+The original paper checkpoint reproduces perfectly (97.71% vs 97.72%). Our baseline gets close (97.52%) but our distillation (97.06%) never overtakes the baseline and falls well short of the paper's 98.08%. The root cause is a code change that replaced **AdamW** (with weight decay) with **plain Adam** (no regularization), compounded by several other deviations from the paper's setup.
 
 ---
 
@@ -65,14 +67,25 @@ All KWT experiments in Berg et al. share a single set of hyperparameters (Table 
 
 ## 3. Test Set Results
 
-We evaluated both checkpoints on the **test set** (unseen during both training and validation). Two independent eval methods produced identical results.
+We evaluated all available checkpoints on the **test set** (unseen during both training and validation).
 
-| Model | Val Accuracy | Test Accuracy | Paper |
-|:------|:-------------|:--------------|:------|
-| Baseline | 96.88% | **97.17%** | 97.72% |
-| Distillation | **100%** | **96.35%** | 98.08% |
+### All runs
 
-**The distillation model with 100% val accuracy scores 0.8% below the baseline on the test set.** The baseline (97.17%) is close to the paper's 97.72% despite missing weight decay.
+Training was split across multiple SLURM jobs on the `studentkillable` partition (~24h each). Each subsequent checkpoint includes the continued training from all prior jobs.
+
+| Checkpoint | Baseline | Distillation |
+|:-----------|:---------|:-------------|
+| Original paper authors' KWT-1 | **97.71%** | -- |
+| 1st SLURM job (~24h, partial) | 97.08% | 96.17% |
+| 1st + 2nd SLURM jobs | 97.44% | 97.13% |
+| **Full run (1st + 2nd + 3rd jobs)** | **97.52%** | **97.06%** |
+| **Paper target** | **97.72%** | **98.08%** |
+
+Key observations:
+- The **original paper checkpoint reproduces** their reported result (97.71% vs 97.72%).
+- Our baseline **improved** with each continued run (97.08% → 97.44% → 97.52%), getting close to the paper.
+- Our distillation **also improved** (96.17% → 97.13% → 97.06%), but **never overtakes the baseline** and falls ~1% short of the paper's 98.08%.
+- Distillation should outperform baseline (paper shows +0.36%), but ours is 0.46% worse -- confirming the missing weight decay is the bottleneck.
 
 ### How to reproduce
 
@@ -81,19 +94,19 @@ source venv3/bin/activate
 export PYTHONPATH=$(pwd):$PYTHONPATH
 export TF_USE_LEGACY_KERAS=1
 
-# Baseline
+# Baseline (replace path with any run's checkpoint dir)
 python eval_checkpoint.py \
-  ./models_data_v2_12_labels/first_run_on_server/kwt1_baseline/ \
+  ./models_data_v2_12_labels/third_run_on_server/kwt1_baseline/ \
   ./data2/speech_commands_v0.02/ \
   --mel_upper_edge_hertz 7600 --mel_num_bins 80 --dct_num_features 40 \
   --window_size_ms 30.0 --window_stride_ms 10.0 \
   kws_transformer --num_layers 12 --heads 1 --d_model 64 --mlp_dim 256 \
   --dropout1 0. --attention_type "time"
 
-# Distillation
+# Distillation (replace path with any run's checkpoint dir)
 python eval_checkpoint.py \
   --distill ./distill_att_mh_rnn.json \
-  ./models_data_v2_12_labels/first_run_on_server/kwt1_distill/ \
+  ./models_data_v2_12_labels/third_run_on_server/kwt1_distill/ \
   ./data2/speech_commands_v0.02/ \
   --mel_upper_edge_hertz 7600 --mel_num_bins 80 --dct_num_features 40 \
   --window_size_ms 30.0 --window_stride_ms 10.0 \
