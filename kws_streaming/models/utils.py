@@ -26,7 +26,6 @@ from kws_streaming.layers import modes
 from kws_streaming.layers.compat import tf
 from kws_streaming.layers.compat import tf1
 from kws_streaming.models import model_flags
-from kws_streaming.models import model_params
 from kws_streaming.models import models as kws_models
 # pylint: disable=g-direct-tensorflow-import
 from tensorflow.python.keras import models
@@ -434,19 +433,6 @@ def next_power_of_two(x):
   """
   return 1 if x == 0 else 2**(int(x) - 1).bit_length()
 
-
-def get_model_with_default_params(model_name, mode=None):
-  """Creates a model with the params specified in HOTWORD_MODEL_PARAMS."""
-  if model_name not in model_params.HOTWORD_MODEL_PARAMS:
-    raise KeyError(
-        "Expected 'model_name' to be one of "
-        f"{model_params.HOTWORD_MODEL_PARAMS.keys} but got '{model_name}'.")
-  params = model_params.HOTWORD_MODEL_PARAMS[model_name]
-  params = model_flags.update_flags(params)
-  model = kws_models.MODELS[params.model_name](params)
-  if mode is not None:
-    model = to_streaming_inference(model, flags=params, mode=mode)
-  return model
 
 
 def traverse_graph(prev_layer, layers):
