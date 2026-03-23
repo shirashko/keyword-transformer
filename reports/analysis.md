@@ -61,8 +61,6 @@ All KWT experiments in Berg et al. share a single set of hyperparameters (Table 
 | Effective LR | **0.0001** | 0.001 | **10x lower** |
 | Gradient updates | **120k** | 23k | **5x more** weight updates |
 
-> The `batch_size=100` for distillation was copied from the upstream ARM repo's `distill.sh` and the default in `model_params.py:74`. It contradicts the paper.
-
 ---
 
 ## 3. Training Curves
