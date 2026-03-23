@@ -37,8 +37,6 @@ from kws_streaming.models import utils
 
 import math
 
-from transformers import AdamWeightDecay
-
 
 def train(flags):
   """Model training."""
@@ -116,23 +114,22 @@ def train(flags):
         weight_decay=flags.novograd_weight_decay,
         grad_averaging=bool(flags.novograd_grad_averaging))
   elif flags.optimizer == 'adamw':
-    # Exclude some layers for weight decay
-    exclude = ["pos_emb", "class_emb", "layer_normalization", "bias"]
-    optimizer = AdamWeightDecay(learning_rate=0.05, weight_decay_rate=flags.l2_weight_decay, exclude_from_weight_decay=exclude)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=float(flags.learning_rate))
   else:
     raise ValueError('Unsupported optimizer:%s' % flags.optimizer)
 
   loss_weights = [ 0.5, 0.5, 0.0 ] if teacher else [ 1. ] # equally weight losses form label and teacher, ignore ensemble output
   model.compile(optimizer=optimizer, loss=loss, loss_weights=loss_weights, metrics=metrics)
 
+  saver = tf.train.Saver(max_to_keep=5)
   train_writer = tf.summary.FileWriter(flags.summaries_dir + '/train',
                                        sess.graph)
   validation_writer = tf.summary.FileWriter(flags.summaries_dir + '/validation')
 
-  sess.run(tf.global_variables_initializer())
+  sess.run(tf.compat.v1.global_variables_initializer())
 
   if flags.start_checkpoint:
-    model.load_weights(flags.start_checkpoint).expect_partial()
+    saver.restore(sess, flags.start_checkpoint)
     logging.info('Weights loaded from %s', flags.start_checkpoint)
 
   if teacher_flags and teacher_flags.start_checkpoint:
@@ -140,7 +137,7 @@ def train(flags):
     teacher_base.load_weights(teacher_flags.start_checkpoint).assert_existing_objects_matched()
     logging.info('Distillation teacher weights loaded from %s', teacher_flags.start_checkpoint)
 
-  start_step = 0
+  start_step = flags.start_step
 
   logging.info('Training from step: %d ', start_step)
 
@@ -214,6 +211,7 @@ def train(flags):
             tf.Summary.Value(tag='accuracy', simple_value=acc_label),
             tf.Summary.Value(tag='teacher_accuracy', simple_value=acc_teacher),
             tf.Summary.Value(tag='ensemble_accuracy', simple_value=acc_ensemble),
+            tf.Summary.Value(tag='loss', simple_value=loss_total),
         ])
       else:
         loss_label, acc_label = result
@@ -222,12 +220,13 @@ def train(flags):
             *(training_step, learning_rate_value, acc_label * 100, loss_label))
         summary = tf.Summary(value=[
             tf.Summary.Value(tag='accuracy', simple_value=acc_label),
+            tf.Summary.Value(tag='loss', simple_value=loss_label),
         ])
 
       train_writer.add_summary(summary, training_step)
 
     is_last_step = (training_step == training_steps_max)
-    if (training_step % flags.eval_step_interval) == 0 or is_last_step:
+    if ((training_step % flags.eval_step_interval) == 0 and training_step > 0) or is_last_step:
       set_size = audio_processor.set_size('validation')
       set_size = int(set_size / flags.batch_size) * flags.batch_size
       total_accuracy = 0.0
@@ -252,12 +251,15 @@ def train(flags):
           tf.Summary.Value(tag='accuracy', simple_value=acc_ensemble),
           tf.Summary.Value(tag='label_head_accuracy', simple_value=acc_label),
           tf.Summary.Value(tag='distill_head_accuracy', simple_value=acc_teacher),
+          tf.Summary.Value(tag='loss', simple_value=loss_total),
           ])
           accuracy = acc_ensemble
         else:
           loss_label, acc_label = result
           summary = tf.Summary(value=[
-              tf.Summary.Value(tag='accuracy', simple_value=acc_label),])
+            tf.Summary.Value(tag='accuracy', simple_value=acc_label),
+            tf.Summary.Value(tag='loss', simple_value=loss_label),
+          ])
           accuracy = acc_label
 
         validation_writer.add_summary(summary, training_step)
@@ -273,7 +275,9 @@ def train(flags):
       if total_accuracy >= best_accuracy:
         best_accuracy = total_accuracy
         # overwrite the best model weights
-        model.save_weights(flags.train_dir + 'best_weights')
+        checkpoint_path = os.path.join(flags.train_dir, 'best_weights.ckpt')
+        saver.save(sess, checkpoint_path)
+        logging.info('Saved best checkpoint to %s', checkpoint_path)
       logging.info('So far the best validation accuracy is %.2f%%',
                    (best_accuracy * 100))
 
@@ -301,4 +305,6 @@ def train(flags):
                *(total_accuracy * 100, set_size))
   with open(os.path.join(flags.train_dir, 'accuracy_last.txt'), 'wt') as fd:
     fd.write(str(total_accuracy * 100))
-  model.save_weights(flags.train_dir + 'last_weights')
+  last_checkpoint_path = os.path.join(flags.train_dir, 'last_weights.ckpt')
+  saver.save(sess, last_checkpoint_path)
+  logging.info('Saved last checkpoint to %s', last_checkpoint_path)

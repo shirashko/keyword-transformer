@@ -1,0 +1,3 @@
+model_checkpoint_path: "/home/yandex/APDL2526a/rashkovits/keyword-transformer/models_data_v2_12_labels/kwt1_distill/last_weights.ckpt"
+all_model_checkpoint_paths: "/home/yandex/APDL2526a/rashkovits/keyword-transformer/models_data_v2_12_labels/kwt1_distill/best_weights.ckpt"
+all_model_checkpoint_paths: "/home/yandex/APDL2526a/rashkovits/keyword-transformer/models_data_v2_12_labels/kwt1_distill/last_weights.ckpt"
