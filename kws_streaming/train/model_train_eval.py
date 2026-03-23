@@ -110,23 +110,6 @@ from kws_streaming.layers import modes
 from kws_streaming.models import model_flags
 from kws_streaming.models import utils
 import kws_streaming.models.att_mh_rnn as att_mh_rnn
-import kws_streaming.models.att_rnn as att_rnn
-import kws_streaming.models.cnn as cnn
-import kws_streaming.models.crnn as crnn
-import kws_streaming.models.dnn as dnn
-import kws_streaming.models.dnn_raw as dnn_raw
-import kws_streaming.models.ds_cnn as ds_cnn
-import kws_streaming.models.ds_tc_resnet as ds_tc_resnet
-import kws_streaming.models.gru as gru
-import kws_streaming.models.inception as inception
-import kws_streaming.models.inception_resnet as inception_resnet
-import kws_streaming.models.lstm as lstm
-import kws_streaming.models.mobilenet as mobilenet
-import kws_streaming.models.mobilenet_v2 as mobilenet_v2
-import kws_streaming.models.svdf as svdf
-import kws_streaming.models.svdf_resnet as svdf_resnet
-import kws_streaming.models.tc_resnet as tc_resnet
-import kws_streaming.models.xception as xception
 import kws_streaming.models.kws_transformer as kws_transformer
 from kws_streaming.train import base_parser
 from kws_streaming.train import train
@@ -208,25 +191,11 @@ def main(_):
 
     # these models are using bi-rnn, so they are non streamable by default
     # also models using striding or pooling are not supported for streaming now
-    non_streamable_models = {'att_mh_rnn', 'att_rnn', 'tc_resnet', 'kws_transformer'}
+    non_streamable_models = {'att_mh_rnn', 'kws_transformer'}
 
     model_is_streamable = True
     if flags.model_name in non_streamable_models:
       model_is_streamable = False
-    # below models can use striding in time dimension,
-    # but this is currently unsupported
-    elif flags.model_name == 'cnn':
-      for strides in utils.parse(flags.cnn_strides):
-        if strides[0] > 1:
-          model_is_streamable = False
-          break
-    elif flags.model_name == 'ds_cnn':
-      if utils.parse(flags.cnn1_strides)[0] > 1:
-        model_is_streamable = False
-      for strides in utils.parse(flags.dw2_strides):
-        if strides[0] > 1:
-          model_is_streamable = False
-          break
 
     # if model can be streamed, then run conversion/evaluation in streaming mode
     if model_is_streamable:
@@ -288,77 +257,9 @@ if __name__ == '__main__':
   # sub parser for model settings
   subparsers = parser.add_subparsers(dest='model_name', help='NN model name')
 
-  # DNN model settings
-  parser_dnn = subparsers.add_parser('dnn')
-  dnn.model_parameters(parser_dnn)
-
-  # DNN raw model settings
-  parser_dnn_raw = subparsers.add_parser('dnn_raw')
-  dnn_raw.model_parameters(parser_dnn_raw)
-
-  # LSTM model settings
-  parser_lstm = subparsers.add_parser('lstm')
-  lstm.model_parameters(parser_lstm)
-
-  # GRU model settings
-  parser_gru = subparsers.add_parser('gru')
-  gru.model_parameters(parser_gru)
-
-  # SVDF model settings
-  parser_svdf = subparsers.add_parser('svdf')
-  svdf.model_parameters(parser_svdf)
-
-  # CNN model settings
-  parser_cnn = subparsers.add_parser('cnn')
-  cnn.model_parameters(parser_cnn)
-
-  # CRNN model settings
-  parser_crnn = subparsers.add_parser('crnn')
-  crnn.model_parameters(parser_crnn)
-
-  # ATT MH RNN model settings
+  # ATT MH RNN model settings (teacher for distillation)
   parser_att_mh_rnn = subparsers.add_parser('att_mh_rnn')
   att_mh_rnn.model_parameters(parser_att_mh_rnn)
-
-  # ATT RNN model settings
-  parser_att_rnn = subparsers.add_parser('att_rnn')
-  att_rnn.model_parameters(parser_att_rnn)
-
-  # DS_CNN model settings
-  parser_ds_cnn = subparsers.add_parser('ds_cnn')
-  ds_cnn.model_parameters(parser_ds_cnn)
-
-  # TC Resnet model settings
-  parser_tc_resnet = subparsers.add_parser('tc_resnet')
-  tc_resnet.model_parameters(parser_tc_resnet)
-
-  # Mobilenet model settings
-  parser_mobilenet = subparsers.add_parser('mobilenet')
-  mobilenet.model_parameters(parser_mobilenet)
-
-  # Mobilenet V2 model settings
-  parser_mobilenet_v2 = subparsers.add_parser('mobilenet_v2')
-  mobilenet_v2.model_parameters(parser_mobilenet_v2)
-
-  # xception model settings
-  parser_xception = subparsers.add_parser('xception')
-  xception.model_parameters(parser_xception)
-
-  # inception model settings
-  parser_inception = subparsers.add_parser('inception')
-  inception.model_parameters(parser_inception)
-
-  # inception resnet model settings
-  parser_inception_resnet = subparsers.add_parser('inception_resnet')
-  inception_resnet.model_parameters(parser_inception_resnet)
-
-  # svdf resnet model settings
-  parser_svdf_resnet = subparsers.add_parser('svdf_resnet')
-  svdf_resnet.model_parameters(parser_svdf_resnet)
-
-  # ds_tc_resnet model settings
-  parser_ds_tc_resnet = subparsers.add_parser('ds_tc_resnet')
-  ds_tc_resnet.model_parameters(parser_ds_tc_resnet)
 
   # kws_transformer settings
   parser_kws_transformer = subparsers.add_parser('kws_transformer')
