@@ -40,8 +40,8 @@ All KWT experiments in Berg et al. share a single set of hyperparameters (Table 
 
 | Parameter | Ours | Paper | Issue |
 |:----------|:-----|:------|:------|
-| Optimizer | Adam | AdamW | **Bug** -- weight decay removed |
-| Weight decay | 0 (code ignores flag) | 0.1 | **Bug** |
+| Optimizer | Adam | AdamW | weight decay removed |
+| Weight decay | 0 (code ignores flag) | 0.1 | |
 | Learning rate | 0.0005 | 0.001 | Half |
 | Batch size | 256 | 512 | Half |
 | Steps | 46,876 | 23,000 | Scaled for batch size (same 12M examples) |
@@ -52,8 +52,8 @@ All KWT experiments in Berg et al. share a single set of hyperparameters (Table 
 
 | Parameter | Ours | Paper | Issue |
 |:----------|:-----|:------|:------|
-| Optimizer | Adam | AdamW | **Bug** -- same as baseline |
-| Weight decay | 0 | 0.1 | **Bug** -- also passed `--l2_weight_decay 0.0` |
+| Optimizer | Adam | AdamW | same as baseline |
+| Weight decay | 0 | 0.1 |  |
 | Learning rate | 0.0005 | 0.001 | Half |
 | Batch size | **100** | 512 | **5x smaller** (inherited from upstream ARM repo) |
 | Steps | 120,000 | 23,000 | Scaled for batch size (same 12M examples) |
