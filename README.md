@@ -29,13 +29,15 @@ Our analysis focuses on the comparison between model trained from scratch and th
 
 ```text
 .
-├── audio_samples/           # Dataset samples (V2-12), background noise, and train, validation examples.
-├── models_data_v2_12/       # Training artifacts: Checkpoints (.ckpt), TensorBoard logs, and flags.
-├── scripts/                 # Slurm/Bash scripts for remote training and evaluation.
-├── kws_streaming/           # Core logic: Model definitions (KWT), data loaders, and training loops.
-├── assets/                  # Project visualizations, architecture diagrams, and result plots.
-├── requirements.txt         # Python dependencies.
-└── README.md                # Project documentation.
+├── models_data_v2_12_labels/ # Training artifacts: Checkpoints (.ckpt), TensorBoard logs, and flags.
+├── scripts/                  # Slurm/Bash scripts for remote training.
+├── kws_streaming/            # Core logic: Model definitions (KWT, Att-MH-RNN), data loaders, and training loops.
+├── assets/                   # Project visualizations, architecture diagrams, and result plots.
+├── reports/                  # Training run analysis and results.
+├── distill_att_mh_rnn.json   # Teacher model config for distillation.
+├── eval_checkpoint.py        # Evaluation script for test set accuracy.
+├── requirements.txt          # Python dependencies.
+└── README.md                 # Project documentation.
 ```
 
 ---
@@ -70,17 +72,33 @@ cd ../
 
 ## 🚀 How to Run
 
-### 1. Evaluation (Performance & Latency)
+### 1. Evaluation
 
-To evaluate the accuracy and measure the inference latency (Batch Size = 1), run:
+To evaluate test set accuracy on saved checkpoints:
 
 ```bash
-# To evaluate the Baseline model:
-sh scripts/evaluate.sh kwt1_baseline
+source venv3/bin/activate
+export PYTHONPATH=$(pwd):$PYTHONPATH
+export TF_USE_LEGACY_KERAS=1
 
-# To evaluate the Distilled model:
-sh scripts/evaluate.sh kwt1_distill
+# Baseline
+python eval_checkpoint.py \
+  ./models_data_v2_12_labels/first_run_on_server/kwt1_baseline/ \
+  ./data2/speech_commands_v0.02/ \
+  --mel_upper_edge_hertz 7600 --mel_num_bins 80 --dct_num_features 40 \
+  --window_size_ms 30.0 --window_stride_ms 10.0 \
+  kws_transformer --num_layers 12 --heads 1 --d_model 64 --mlp_dim 256 \
+  --dropout1 0. --attention_type "time"
 
+# Distillation
+python eval_checkpoint.py \
+  --distill ./distill_att_mh_rnn.json \
+  ./models_data_v2_12_labels/first_run_on_server/kwt1_distill/ \
+  ./data2/speech_commands_v0.02/ \
+  --mel_upper_edge_hertz 7600 --mel_num_bins 80 --dct_num_features 40 \
+  --window_size_ms 30.0 --window_stride_ms 10.0 \
+  kws_transformer --num_layers 12 --heads 1 --d_model 64 --mlp_dim 256 \
+  --dropout1 0. --attention_type "time"
 ```
 
 ### 2. Training
